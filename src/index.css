@@ -1,0 +1,168 @@
+@import "tailwindcss";
+
+:root {
+  /* Brand Palette: Deep Blue (Trust & Depth) */
+  --afaq-brand-50: #f1f3f5;
+  --afaq-brand-100: #dee4e8;
+  --afaq-brand-200: #bdc8d2;
+  --afaq-brand-300: #94a7b6;
+  --afaq-brand-400: #6c859b;
+  --afaq-brand-500: #41627d;
+  --afaq-brand-600: #254b6a;
+  --afaq-brand-700: #123b5d;
+  --afaq-brand-800: #0e2f4a;
+  --afaq-brand-900: #0b253a;
+
+  /* Accent Palette: Turquoise (Energy & Ambition) */
+  --afaq-accent-50: #edfafa;
+  --afaq-accent-100: #d7f5f4;
+  --afaq-accent-200: #b3ebea;
+  --afaq-accent-300: #84dfdd;
+  --afaq-accent-400: #51d2cf;
+  --afaq-accent-500: #20c5c2;
+  --afaq-accent-600: #1ca9a7;
+  --afaq-accent-700: #168a88;
+  --afaq-accent-800: #126e6d;
+  --afaq-accent-900: #0d5351;
+
+  /* Semantic Status Tokens */
+  --afaq-success: #16a34a;
+  --afaq-warning: #f59e0b;
+  --afaq-error: #dc2626;
+
+  /* Typography */
+  --afaq-font-sans: "IBM Plex Sans Arabic", system-ui, -apple-system, sans-serif;
+  --afaq-font-ui: "Cairo", "IBM Plex Sans Arabic", system-ui, sans-serif;
+
+  /* Layout & Spacing */
+  --afaq-container-max: 1280px;
+  --afaq-leading-arabic: 1.7;
+
+  /* Radii */
+  --afaq-radius-sm: 8px;
+  --afaq-radius-md: 12px;
+  --afaq-radius-lg: 16px;
+  --afaq-radius-2xl: 24px;
+  --afaq-radius-full: 9999px;
+
+  /* Blue-tinted Subtle Shadows */
+  --afaq-shadow-xs: 0 1px 2px 0 rgba(18, 59, 93, 0.05);
+  --afaq-shadow-sm: 0 2px 8px -1px rgba(18, 59, 93, 0.08), 0 1px 3px 0 rgba(18, 59, 93, 0.04);
+  --afaq-shadow-md: 0 10px 24px -4px rgba(18, 59, 93, 0.12), 0 4px 8px -2px rgba(18, 59, 93, 0.05);
+}
+
+@theme {
+  /* Color Scales */
+  --color-brand-50: var(--afaq-brand-50);
+  --color-brand-100: var(--afaq-brand-100);
+  --color-brand-200: var(--afaq-brand-200);
+  --color-brand-300: var(--afaq-brand-300);
+  --color-brand-400: var(--afaq-brand-400);
+  --color-brand-500: var(--afaq-brand-500);
+  --color-brand-600: var(--afaq-brand-600);
+  --color-brand-700: var(--afaq-brand-700);
+  --color-brand-800: var(--afaq-brand-800);
+  --color-brand-900: var(--afaq-brand-900);
+
+  --color-accent-50: var(--afaq-accent-50);
+  --color-accent-100: var(--afaq-accent-100);
+  --color-accent-200: var(--afaq-accent-200);
+  --color-accent-300: var(--afaq-accent-300);
+  --color-accent-400: var(--afaq-accent-400);
+  --color-accent-500: var(--afaq-accent-500);
+  --color-accent-600: var(--afaq-accent-600);
+  --color-accent-700: var(--afaq-accent-700);
+  --color-accent-800: var(--afaq-accent-800);
+  --color-accent-900: var(--afaq-accent-900);
+
+  --color-success: var(--afaq-success);
+  --color-warning: var(--afaq-warning);
+  --color-error: var(--afaq-error);
+
+  /* Font Families */
+  --font-sans: var(--afaq-font-sans);
+  --font-ui: var(--afaq-font-ui);
+
+  /* Type Scale */
+  --text-display: 3rem;
+  --text-display--line-height: 1.25;
+  --text-h1: 2.25rem;
+  --text-h1--line-height: 1.3;
+  --text-h2: 1.875rem;
+  --text-h2--line-height: 1.35;
+  --text-h3: 1.5rem;
+  --text-h3--line-height: 1.4;
+  --text-h4: 1.25rem;
+  --text-h4--line-height: 1.45;
+  --text-body-lg: 1.125rem;
+  --text-body-lg--line-height: 1.7;
+  --text-body: 1rem;
+  --text-body--line-height: 1.7;
+  --text-small: 0.875rem;
+  --text-small--line-height: 1.6;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.5;
+
+  /* Radii */
+  --radius-sm: var(--afaq-radius-sm);
+  --radius-md: var(--afaq-radius-md);
+  --radius-lg: var(--afaq-radius-lg);
+  --radius-2xl: var(--afaq-radius-2xl);
+  --radius-full: var(--afaq-radius-full);
+
+  /* Shadows */
+  --shadow-xs: var(--afaq-shadow-xs);
+  --shadow-sm: var(--afaq-shadow-sm);
+  --shadow-md: var(--afaq-shadow-md);
+}
+
+@layer base {
+  html {
+    font-family: var(--afaq-font-sans);
+    scroll-behavior: smooth;
+    color: var(--afaq-brand-900);
+    background-color: #ffffff;
+  }
+
+  p {
+    line-height: var(--afaq-leading-arabic);
+  }
+
+  /* Accessible Turquoise Focus Ring */
+  :focus-visible {
+    outline: 2px solid var(--afaq-accent-500);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+.afaq-container {
+  width: 100%;
+  max-width: var(--afaq-container-max);
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+@media (min-width: 640px) {
+  .afaq-container {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .afaq-container {
+    padding-inline: 2rem;
+  }
+}

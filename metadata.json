@@ -1,0 +1,6 @@
+{
+  "name": "آفاق | AFAQ",
+  "description": "منصة آفاق تساعد الشباب في الفيوم على اكتشاف الفعاليات والورش والدورات والتسجيل فيها من مكان واحد.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
