@@ -25,9 +25,12 @@ export interface CategoryMeta {
   countLabel: string;
 }
 
+export type RegistrationStatus = 'active' | 'cancelled';
+
 export interface UserRegistrationItem {
   id: string;
   eventId: string;
+  status: RegistrationStatus;
   createdAt: string;
   eventTitle: string;
   eventCategory: EventCategory;

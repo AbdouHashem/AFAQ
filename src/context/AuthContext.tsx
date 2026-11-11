@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   onAuthStateChanged,
   signInWithPopup,
@@ -46,6 +46,8 @@ function mapFirebaseAuthError(error: unknown): string {
       return 'تم إجراء عدة محاولات متتالية. يرجى الانتظار قليلًا ثم المحاولة مرة أخرى.';
     case 'auth/user-disabled':
       return 'تم تعطيل هذا الحساب. يرجى التواصل مع إدارة المنصة.';
+    case 'auth/unauthorized-domain':
+      return 'نطاق هذا الرابط غير مضاف في النطاقات المسموح بها في Firebase Authentication. أضف رابط الموقع من إعدادات Authentication في Firebase Console.';
     default:
       return error instanceof Error && error.message.includes('تعذر')
         ? error.message
@@ -85,7 +87,7 @@ async function syncUserWithBackend(firebaseUser: User): Promise<{ user: AuthUser
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [inMemoryToken, setInMemoryToken] = useState<string | null>(null);
+  const inMemoryTokenRef = useRef<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [signInLoading, setSignInLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -98,7 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (!firebaseUser) {
         setUser(null);
-        setInMemoryToken(null);
+        inMemoryTokenRef.current = null;
         setAuthLoading(false);
         return;
       }
@@ -106,7 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const synced = await syncUserWithBackend(firebaseUser);
         if (!active) return;
-        setInMemoryToken(synced.token);
+        inMemoryTokenRef.current = synced.token;
         setUser(synced.user);
       } catch (err) {
         if (!active) return;
@@ -143,7 +145,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       googleAuthProvider.setCustomParameters({ prompt: 'select_account' });
       const credential = await signInWithPopup(auth, googleAuthProvider);
       const synced = await syncUserWithBackend(credential.user);
-      setInMemoryToken(synced.token);
+      inMemoryTokenRef.current = synced.token;
       setUser(synced.user);
       return true;
     } catch (err) {
@@ -158,15 +160,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuthError(null);
     await firebaseSignOut(auth);
     setUser(null);
-    setInMemoryToken(null);
+    inMemoryTokenRef.current = null;
   }, []);
 
   const getIdToken = useCallback(async (): Promise<string | null> => {
     if (!auth.currentUser) return null;
     const freshToken = await auth.currentUser.getIdToken();
-    setInMemoryToken(freshToken);
-    return freshToken ?? inMemoryToken;
-  }, [inMemoryToken]);
+    inMemoryTokenRef.current = freshToken;
+    return freshToken ?? inMemoryTokenRef.current;
+  }, []);
 
   return (
     <AuthContext.Provider

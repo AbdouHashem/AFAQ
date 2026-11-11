@@ -49,8 +49,14 @@ export const EventDetailsPage: React.FC<EventDetailsPageProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const cancelDialogRef = useRef<HTMLDivElement | null>(null);
   const lastTriggerRef = useRef<HTMLElement | null>(null);
+  const lastCancelTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -173,6 +179,29 @@ export const EventDetailsPage: React.FC<EventDetailsPageProps> = ({
     };
   }, [confirmOpen, submitting]);
 
+  useEffect(() => {
+    if (!cancelConfirmOpen) {
+      lastCancelTriggerRef.current?.focus();
+      return;
+    }
+
+    lastCancelTriggerRef.current = document.activeElement as HTMLElement | null;
+    const focusTimer = window.setTimeout(() => {
+      cancelDialogRef.current?.focus();
+    }, 0);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !cancelling) {
+        setCancelConfirmOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [cancelConfirmOpen, cancelling]);
+
   const handlePrimaryRegisterClick = () => {
     if (!event) return;
 
@@ -187,6 +216,16 @@ export const EventDetailsPage: React.FC<EventDetailsPageProps> = ({
 
     setSubmitError(null);
     setConfirmOpen(true);
+  };
+
+  const handleOpenCancelConfirm = () => {
+    if (!event) return;
+    if (!user) {
+      onRequireLogin(event);
+      return;
+    }
+    setCancelError(null);
+    setCancelConfirmOpen(true);
   };
 
   const handleConfirmRegistration = async () => {
@@ -239,6 +278,67 @@ export const EventDetailsPage: React.FC<EventDetailsPageProps> = ({
       setSubmitError('تعذر الاتصال بالخادم. تأكد من اتصالك بالإنترنت وحاول مجددًا.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleConfirmCancelRegistration = async () => {
+    if (!event) return;
+    setCancelling(true);
+    setCancelError(null);
+
+    try {
+      const token = await getIdToken();
+      if (!token) {
+        setCancelConfirmOpen(false);
+        onRequireLogin(event);
+        return;
+      }
+
+      const res = await fetch(
+        `/api/registrations/event/${encodeURIComponent(event.id)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+
+      if (res.status === 401) {
+        setCancelConfirmOpen(false);
+        onRequireLogin(event);
+        return;
+      }
+
+      if (res.status === 404 || res.status === 409) {
+        setIsRegistered(false);
+        setCancelConfirmOpen(false);
+        setSuccessMessage(
+          data.error ?? 'تم إلغاء تسجيلك في هذه الفعالية مسبقًا.'
+        );
+        return;
+      }
+
+      if (!res.ok) {
+        setCancelError(
+          data.error ?? 'تعذر إلغاء التسجيل حاليًا. يرجى المحاولة مرة أخرى.'
+        );
+        return;
+      }
+
+      setIsRegistered(false);
+      setCancelConfirmOpen(false);
+      setSuccessMessage(
+        'تم إلغاء تسجيلك في الفعالية بنجاح. يمكنك التسجيل مرة أخرى في أي وقت.'
+      );
+    } catch {
+      setCancelError(
+        'تعذر الاتصال بالخادم. تأكد من اتصالك بالإنترنت وحاول مجددًا.'
+      );
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -534,18 +634,28 @@ export const EventDetailsPage: React.FC<EventDetailsPageProps> = ({
               </Button>
 
               {isRegistered && (
-                <div className="text-center">
-                  <a
-                    href="/my-registrations"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onNavigateMyRegistrations();
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-sm font-ui text-small font-semibold text-accent-800 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+                <div className="space-y-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleOpenCancelConfirm}
+                    disabled={authLoading || checkingRegistration || cancelling}
+                    className="inline-flex min-h-10 w-full items-center justify-center rounded-full border border-error/30 bg-white px-4 py-2 font-ui text-small font-semibold text-error hover:border-error/50 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:pointer-events-none disabled:opacity-50 transition-colors cursor-pointer"
                   >
-                    <span>عرض تسجيلاتي</span>
-                    <ArrowLeft className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden="true" />
-                  </a>
+                    إلغاء التسجيل
+                  </button>
+                  <div className="text-center">
+                    <a
+                      href="/my-registrations"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onNavigateMyRegistrations();
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-sm font-ui text-small font-semibold text-accent-800 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+                    >
+                      <span>عرض تسجيلاتي</span>
+                      <ArrowLeft className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden="true" />
+                    </a>
+                  </div>
                 </div>
               )}
             </div>
@@ -555,24 +665,37 @@ export const EventDetailsPage: React.FC<EventDetailsPageProps> = ({
 
       {/* Fixed Bottom CTA Bar (Mobile & Tablet) */}
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur-sm px-4 py-3 shadow-md">
-        <div className="afaq-container flex items-center justify-between gap-4 px-0">
+        <div className="afaq-container flex items-center justify-between gap-3 px-0">
           <div className="min-w-0">
             <p className="truncate font-ui text-small font-bold text-brand-900">
               {event.title}
             </p>
             <p className="truncate font-ui text-caption text-slate-600 tabular-nums">
-              {event.dateArabic} · {event.timeArabic}
+              {isRegistered
+                ? 'أنت مسجّل في هذه الفعالية'
+                : `${event.dateArabic} · ${event.timeArabic}`}
             </p>
           </div>
-          <Button
-            variant={isRegistered ? 'outline' : 'secondary'}
-            size="md"
-            withArrow={!isRegistered && !checkingRegistration}
-            disabled={isButtonDisabled}
-            onClick={handlePrimaryRegisterClick}
-          >
-            {buttonText}
-          </Button>
+          {isRegistered ? (
+            <button
+              type="button"
+              onClick={handleOpenCancelConfirm}
+              disabled={authLoading || checkingRegistration || cancelling}
+              className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-full border border-error/40 bg-white px-4 py-2 font-ui text-small font-semibold text-error hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:pointer-events-none disabled:opacity-50 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              إلغاء التسجيل
+            </button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="md"
+              withArrow={!checkingRegistration}
+              disabled={isButtonDisabled}
+              onClick={handlePrimaryRegisterClick}
+            >
+              {buttonText}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -680,6 +803,113 @@ export const EventDetailsPage: React.FC<EventDetailsPageProps> = ({
               >
                 {submitting ? 'جارٍ التأكيد...' : 'تأكيد التسجيل'}
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Registration Confirmation Dialog */}
+      {cancelConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-brand-900/60 px-4 backdrop-blur-xs"
+          onClick={() => {
+            if (!cancelling) setCancelConfirmOpen(false);
+          }}
+        >
+          <div
+            ref={cancelDialogRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-cancel-title"
+            className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-md space-y-5 focus:outline-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <h2
+                  id="confirm-cancel-title"
+                  className="text-h3 font-bold text-brand-900"
+                >
+                  إلغاء التسجيل
+                </h2>
+                <p className="text-small text-slate-600">
+                  هل أنت متأكد من رغبتك في إلغاء تسجيلك في هذه الفعالية؟
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={cancelling}
+                onClick={() => setCancelConfirmOpen(false)}
+                aria-label="إغلاق نافذة إلغاء التسجيل"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:opacity-50 cursor-pointer"
+              >
+                <X className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="rounded-md border border-slate-200 bg-brand-50/50 p-4 space-y-2.5">
+              <h3 className="font-sans text-h4 font-bold text-brand-900">
+                {event.title}
+              </h3>
+              <div className="flex items-center gap-2 text-small text-slate-700">
+                <Calendar
+                  className="h-4 w-4 shrink-0 text-brand-700"
+                  strokeWidth={1.75}
+                  aria-hidden="true"
+                />
+                <span className="tabular-nums">
+                  {event.dateArabic} · {event.timeArabic}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-small text-slate-700">
+                <MapPin
+                  className="h-4 w-4 shrink-0 text-brand-700"
+                  strokeWidth={1.75}
+                  aria-hidden="true"
+                />
+                <span>{event.location}</span>
+              </div>
+            </div>
+
+            {cancelError && (
+              <div
+                role="alert"
+                className="flex items-start gap-2.5 rounded-md border border-error/30 bg-red-50 px-4 py-3 text-small text-error"
+              >
+                <AlertCircle
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                  strokeWidth={2}
+                  aria-hidden="true"
+                />
+                <span className="font-ui leading-snug">{cancelError}</span>
+              </div>
+            )}
+
+            <div className="flex flex-col-reverse gap-2.5 sm:flex-row sm:justify-end">
+              <Button
+                variant="outline"
+                size="md"
+                disabled={cancelling}
+                onClick={() => setCancelConfirmOpen(false)}
+              >
+                تراجع
+              </Button>
+              <button
+                type="button"
+                disabled={cancelling}
+                onClick={handleConfirmCancelRegistration}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-error bg-error px-5 py-2.5 font-ui text-small font-semibold text-white shadow-xs transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer"
+              >
+                {cancelling && (
+                  <Loader2
+                    className="h-4 w-4 animate-spin"
+                    strokeWidth={2}
+                    aria-hidden="true"
+                  />
+                )}
+                <span>{cancelling ? 'جارٍ الإلغاء...' : 'تأكيد الإلغاء'}</span>
+              </button>
             </div>
           </div>
         </div>

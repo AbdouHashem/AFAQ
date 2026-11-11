@@ -1,6 +1,6 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { db } from './index.ts';
-import { events, registrations } from './schema.ts';
+import { events, registrations, users } from './schema.ts';
 import type { EventCategory, UserRegistrationItem } from '../types/event.ts';
 
 const UUID_REGEX =
@@ -41,6 +41,7 @@ export async function getUserRegistrations(
       .select({
         id: registrations.id,
         eventId: registrations.eventId,
+        status: registrations.status,
         createdAt: registrations.createdAt,
         eventTitle: events.title,
         eventCategory: events.category,
@@ -52,7 +53,11 @@ export async function getUserRegistrations(
       .from(registrations)
       .innerJoin(events, eq(registrations.eventId, events.id))
       .where(
-        and(eq(registrations.userId, userId), eq(events.status, 'published'))
+        and(
+          eq(registrations.userId, userId),
+          eq(registrations.status, 'active'),
+          eq(events.status, 'published')
+        )
       )
       .orderBy(asc(events.startsAt));
 
@@ -61,6 +66,7 @@ export async function getUserRegistrations(
       return {
         id: row.id,
         eventId: row.eventId,
+        status: row.status,
         createdAt: new Date(row.createdAt).toISOString(),
         eventTitle: row.eventTitle,
         eventCategory: row.eventCategory,
@@ -96,7 +102,8 @@ export async function isUserRegisteredForEvent(
       .where(
         and(
           eq(registrations.userId, userId),
-          eq(registrations.eventId, eventId)
+          eq(registrations.eventId, eventId),
+          eq(registrations.status, 'active')
         )
       )
       .limit(1);
@@ -138,7 +145,7 @@ export async function createUserRegistration(userId: string, eventId: string) {
     }
 
     const existing = await db
-      .select({ id: registrations.id })
+      .select({ id: registrations.id, status: registrations.status })
       .from(registrations)
       .where(
         and(
@@ -149,7 +156,30 @@ export async function createUserRegistration(userId: string, eventId: string) {
       .limit(1);
 
     if (existing.length > 0) {
-      throw new RegistrationError('أنت مسجل بالفعل في هذه الفعالية.', 409);
+      if (existing[0].status === 'active') {
+        throw new RegistrationError('أنت مسجل بالفعل في هذه الفعالية.', 409);
+      }
+
+      const reactivated = await db
+        .update(registrations)
+        .set({
+          status: 'active',
+          cancelledAt: null,
+          createdAt: new Date(),
+        })
+        .where(
+          and(
+            eq(registrations.id, existing[0].id),
+            eq(registrations.status, 'cancelled')
+          )
+        )
+        .returning();
+
+      if (reactivated.length === 0) {
+        throw new RegistrationError('أنت مسجل بالفعل في هذه الفعالية.', 409);
+      }
+
+      return reactivated[0];
     }
 
     const inserted = await db
@@ -157,6 +187,8 @@ export async function createUserRegistration(userId: string, eventId: string) {
       .values({
         userId,
         eventId,
+        status: 'active',
+        cancelledAt: null,
       })
       .returning();
 
@@ -176,5 +208,112 @@ export async function createUserRegistration(userId: string, eventId: string) {
     throw new Error('تعذر إتمام التسجيل حاليًا. يرجى المحاولة لاحقًا.', {
       cause: error,
     });
+  }
+}
+
+export async function cancelUserRegistration(userId: string, eventId: string) {
+  if (!UUID_REGEX.test(eventId)) {
+    throw new RegistrationError('معرّف الفعالية غير صالح.', 400);
+  }
+
+  try {
+    const updated = await db
+      .update(registrations)
+      .set({
+        status: 'cancelled',
+        cancelledAt: new Date(),
+      })
+      .where(
+        and(
+          eq(registrations.userId, userId),
+          eq(registrations.eventId, eventId),
+          eq(registrations.status, 'active')
+        )
+      )
+      .returning();
+
+    if (updated.length > 0) {
+      return updated[0];
+    }
+
+    const existing = await db
+      .select({ status: registrations.status })
+      .from(registrations)
+      .where(
+        and(
+          eq(registrations.userId, userId),
+          eq(registrations.eventId, eventId)
+        )
+      )
+      .limit(1);
+
+    if (existing.length > 0 && existing[0].status === 'cancelled') {
+      throw new RegistrationError(
+        'تم إلغاء تسجيلك في هذه الفعالية مسبقًا.',
+        409
+      );
+    }
+
+    throw new RegistrationError(
+      'لا يوجد تسجيل نشط لك في هذه الفعالية.',
+      404
+    );
+  } catch (error) {
+    if (error instanceof RegistrationError) {
+      throw error;
+    }
+    console.error('Database query failed in cancelUserRegistration:', error);
+    throw new Error('تعذر إلغاء التسجيل حاليًا. يرجى المحاولة لاحقًا.', {
+      cause: error,
+    });
+  }
+}
+
+export async function getAllRegistrationsForAdmin(eventId?: string) {
+  if (eventId !== undefined && !UUID_REGEX.test(eventId)) {
+    throw new RegistrationError('معرّف الفعالية غير صالح.', 400);
+  }
+
+  try {
+    const whereClause = eventId
+      ? and(
+          eq(registrations.status, 'active'),
+          eq(registrations.eventId, eventId)
+        )
+      : eq(registrations.status, 'active');
+
+    const rows = await db
+      .select({
+        id: registrations.id,
+        userId: registrations.userId,
+        userName: users.name,
+        userEmail: users.email,
+        eventId: registrations.eventId,
+        eventTitle: events.title,
+        createdAt: registrations.createdAt,
+      })
+      .from(registrations)
+      .innerJoin(events, eq(registrations.eventId, events.id))
+      .innerJoin(users, eq(registrations.userId, users.id))
+      .where(whereClause)
+      .orderBy(desc(registrations.createdAt));
+
+    return rows.map((row) => {
+      const createdDate = new Date(row.createdAt);
+      return {
+        id: row.id,
+        userId: row.userId,
+        userName: row.userName,
+        userEmail: row.userEmail,
+        eventId: row.eventId,
+        eventTitle: row.eventTitle,
+        createdAt: createdDate.toISOString(),
+        dateArabic: formatArabicDate(createdDate),
+        timeArabic: formatArabicTime(createdDate),
+      };
+    });
+  } catch (error) {
+    console.error('Database query failed in getAllRegistrationsForAdmin:', error);
+    throw new Error('تعذر تحميل تسجيلات الفعاليات حاليًا.', { cause: error });
   }
 }

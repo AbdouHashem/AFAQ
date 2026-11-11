@@ -6,17 +6,64 @@ import { EventsPage } from './pages/EventsPage';
 import { EventDetailsPage } from './pages/EventDetailsPage';
 import { LoginPage } from './pages/LoginPage';
 import { MyRegistrationsPage } from './pages/MyRegistrationsPage';
-import { AuthProvider } from './context/AuthContext';
+import { UnauthorizedPage } from './pages/UnauthorizedPage';
+import {
+  AdminLayout,
+  type AdminSectionPath,
+} from './components/admin/AdminLayout';
+import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
+import { AdminEventsPage } from './pages/admin/AdminEventsPage';
+import { AdminEventFormPage } from './pages/admin/AdminEventFormPage';
+import { AdminRegistrationsPage } from './pages/admin/AdminRegistrationsPage';
+import { AdminUsersPage } from './pages/admin/AdminUsersPage';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import type { AfaqEvent, EventCategory } from './types/event';
 
 const VALID_CATEGORIES: EventCategory[] = ['workshop', 'course', 'event'];
+
+type AdminRoute =
+  | '/admin'
+  | '/admin/events'
+  | '/admin/events/new'
+  | '/admin/events/edit'
+  | '/admin/registrations'
+  | '/admin/users';
 
 type AppRoute =
   | '/'
   | '/events'
   | '/event-details'
   | '/login'
-  | '/my-registrations';
+  | '/my-registrations'
+  | AdminRoute;
+
+function isAdminRoute(path: AppRoute): path is AdminRoute {
+  return (
+    path === '/admin' ||
+    path === '/admin/events' ||
+    path === '/admin/events/new' ||
+    path === '/admin/events/edit' ||
+    path === '/admin/registrations' ||
+    path === '/admin/users'
+  );
+}
+
+function toAdminSectionPath(path: AppRoute): AdminSectionPath {
+  if (
+    path === '/admin/events' ||
+    path === '/admin/events/new' ||
+    path === '/admin/events/edit'
+  ) {
+    return '/admin/events';
+  }
+  if (path === '/admin/registrations') {
+    return '/admin/registrations';
+  }
+  if (path === '/admin/users') {
+    return '/admin/users';
+  }
+  return '/admin';
+}
 
 interface EventsFilterState {
   category: EventCategory | '';
@@ -61,6 +108,58 @@ function parseRouteFromLocation(): RouteState {
   if (pathname === '/my-registrations' || pathname === '/my-registrations/') {
     return {
       path: '/my-registrations',
+      eventId: null,
+      filters: { category: '', query: '', organizer: '' },
+    };
+  }
+
+  if (pathname === '/admin/events/new' || pathname === '/admin/events/new/') {
+    return {
+      path: '/admin/events/new',
+      eventId: null,
+      filters: { category: '', query: '', organizer: '' },
+    };
+  }
+
+  const adminEditMatch = pathname.match(/^\/admin\/events\/([^/]+)\/edit\/?$/);
+  if (adminEditMatch) {
+    return {
+      path: '/admin/events/edit',
+      eventId: decodeURIComponent(adminEditMatch[1]),
+      filters: { category: '', query: '', organizer: '' },
+    };
+  }
+
+  if (pathname === '/admin/events' || pathname === '/admin/events/') {
+    return {
+      path: '/admin/events',
+      eventId: null,
+      filters: { category: '', query: '', organizer: '' },
+    };
+  }
+
+  if (
+    pathname === '/admin/registrations' ||
+    pathname === '/admin/registrations/'
+  ) {
+    return {
+      path: '/admin/registrations',
+      eventId: null,
+      filters: { category: '', query: '', organizer: '' },
+    };
+  }
+
+  if (pathname === '/admin/users' || pathname === '/admin/users/') {
+    return {
+      path: '/admin/users',
+      eventId: null,
+      filters: { category: '', query: '', organizer: '' },
+    };
+  }
+
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    return {
+      path: '/admin',
       eventId: null,
       filters: { category: '', query: '', organizer: '' },
     };
@@ -114,6 +213,7 @@ function updatePageMetadata(title: string, description: string) {
 }
 
 function AppContent() {
+  const { user, authLoading, getIdToken } = useAuth();
   const [routeState, setRouteState] = useState<RouteState>(() =>
     parseRouteFromLocation()
   );
@@ -122,7 +222,7 @@ function AppContent() {
   );
   const [returnRoute, setReturnRoute] = useState<RouteState>(() => {
     const initial = parseRouteFromLocation();
-    return initial.path === '/my-registrations'
+    return initial.path === '/my-registrations' || isAdminRoute(initial.path)
       ? initial
       : {
           path: '/',
@@ -137,6 +237,13 @@ function AppContent() {
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [eventsReloadTick, setEventsReloadTick] = useState(0);
   const [detailsEvent, setDetailsEvent] = useState<AfaqEvent | null>(null);
+
+  const [adminGate, setAdminGate] = useState<
+    'idle' | 'checking' | 'authorized' | 'unauthorized'
+  >('idle');
+  const [adminEventsBanner, setAdminEventsBanner] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -169,6 +276,61 @@ function AppContent() {
     return () => controller.abort();
   }, [eventsReloadTick]);
 
+  // Verify admin authorization directly from server on every /admin/* route visit
+  useEffect(() => {
+    if (!isAdminRoute(routeState.path)) {
+      setAdminGate('idle');
+      return;
+    }
+
+    if (authLoading) {
+      setAdminGate('checking');
+      return;
+    }
+
+    if (!user) {
+      setAdminGate('unauthorized');
+      return;
+    }
+
+    const controller = new AbortController();
+    setAdminGate('checking');
+
+    async function verifyAdminOnServer() {
+      try {
+        const token = await getIdToken();
+        if (!token || controller.signal.aborted) {
+          if (!controller.signal.aborted) setAdminGate('unauthorized');
+          return;
+        }
+
+        const res = await fetch('/api/admin/access', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          signal: controller.signal,
+        });
+
+        if (controller.signal.aborted) return;
+        if (!res.ok) {
+          setAdminGate('unauthorized');
+          return;
+        }
+
+        const data = (await res.json().catch(() => ({}))) as {
+          authorized?: boolean;
+        };
+        setAdminGate(data.authorized === true ? 'authorized' : 'unauthorized');
+      } catch (err) {
+        if ((err as { name?: string }).name === 'AbortError') return;
+        setAdminGate('unauthorized');
+      }
+    }
+
+    verifyAdminOnServer();
+    return () => controller.abort();
+  }, [routeState.path, user, authLoading, getIdToken]);
+
   useEffect(() => {
     const handlePopState = () => {
       const next = parseRouteFromLocation();
@@ -182,7 +344,44 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (routeState.path === '/login') {
+    if (isAdminRoute(routeState.path)) {
+      if (adminGate === 'unauthorized') {
+        updatePageMetadata(
+          'غير مصرّح | آفاق',
+          'عذرًا، هذه الصفحة مخصصة لمشرفي منصة آفاق فقط.'
+        );
+      } else if (routeState.path === '/admin/events/new') {
+        updatePageMetadata(
+          'إضافة فعالية جديدة | لوحة التحكم — آفاق',
+          'إضافة فعالية أو ورشة أو دورة جديدة في منصة آفاق.'
+        );
+      } else if (routeState.path === '/admin/events/edit') {
+        updatePageMetadata(
+          'تعديل الفعالية | لوحة التحكم — آفاق',
+          'تعديل بيانات الفعالية وتحديث حالة نشرها في منصة آفاق.'
+        );
+      } else if (routeState.path === '/admin/events') {
+        updatePageMetadata(
+          'إدارة الفعاليات | لوحة التحكم — آفاق',
+          'إدارة الفعاليات والورش والدورات التدريبية في منصة آفاق.'
+        );
+      } else if (routeState.path === '/admin/registrations') {
+        updatePageMetadata(
+          'إدارة التسجيلات | لوحة التحكم — آفاق',
+          'عرض ومتابعة تسجيلات الشباب في فعاليات آفاق.'
+        );
+      } else if (routeState.path === '/admin/users') {
+        updatePageMetadata(
+          'المستخدمون | لوحة التحكم — آفاق',
+          'عرض قائمة الحسابات المسجّلة عبر جوجل في منصة آفاق.'
+        );
+      } else {
+        updatePageMetadata(
+          'لوحة التحكم | آفاق',
+          'لوحة إدارة منصة آفاق للفعاليات والورش والدورات في الفيوم.'
+        );
+      }
+    } else if (routeState.path === '/login') {
       updatePageMetadata(
         'تسجيل الدخول | آفاق',
         'سجّل دخولك بحساب جوجل في منصة آفاق لاكتشاف فعاليات وورش ودورات الفيوم والتسجيل فيها بسهولة.'
@@ -219,7 +418,7 @@ function AppContent() {
         'منصة آفاق تساعد الشباب في الفيوم على اكتشاف الفعاليات والورش والدورات والتسجيل فيها من مكان واحد.'
       );
     }
-  }, [routeState.path, detailsEvent]);
+  }, [routeState.path, detailsEvent, adminGate]);
 
   const navigateTo = useCallback(
     (nextState: RouteState, replace = false) => {
@@ -228,6 +427,10 @@ function AppContent() {
         url = '/login';
       } else if (nextState.path === '/my-registrations') {
         url = '/my-registrations';
+      } else if (nextState.path === '/admin/events/edit' && nextState.eventId) {
+        url = `/admin/events/${encodeURIComponent(nextState.eventId)}/edit`;
+      } else if (isAdminRoute(nextState.path)) {
+        url = nextState.path;
       } else if (nextState.path === '/events') {
         url = buildEventsUrl(nextState.filters);
         setSavedEventsFilters(nextState.filters);
@@ -466,6 +669,128 @@ function AppContent() {
     });
   }, [handleNavigateLogin]);
 
+  const handleNavigateAdminSection = useCallback(
+    (adminPath: AdminSectionPath) => {
+      navigateTo({
+        path: adminPath,
+        eventId: null,
+        filters: { category: '', query: '', organizer: '' },
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [navigateTo]
+  );
+
+  const handleNavigateAdminCreateEvent = useCallback(() => {
+    navigateTo({
+      path: '/admin/events/new',
+      eventId: null,
+      filters: { category: '', query: '', organizer: '' },
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [navigateTo]);
+
+  const handleNavigateAdminEditEvent = useCallback(
+    (eventId: string) => {
+      navigateTo({
+        path: '/admin/events/edit',
+        eventId,
+        filters: { category: '', query: '', organizer: '' },
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [navigateTo]
+  );
+
+  const handleAdminEventFormSuccess = useCallback(
+    (successMessage: string) => {
+      setAdminEventsBanner(successMessage);
+      setEventsReloadTick((prev) => prev + 1);
+      navigateTo({
+        path: '/admin/events',
+        eventId: null,
+        filters: { category: '', query: '', organizer: '' },
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [navigateTo]
+  );
+
+  const handleConsumeAdminEventsBanner = useCallback(() => {
+    setAdminEventsBanner(null);
+  }, []);
+
+  const handleRequireLoginForAdmin = useCallback(() => {
+    handleNavigateLogin(
+      isAdminRoute(routeState.path)
+        ? routeState
+        : {
+            path: '/admin',
+            eventId: null,
+            filters: { category: '', query: '', organizer: '' },
+          }
+    );
+  }, [handleNavigateLogin, routeState]);
+
+  const currentIsAdminRoute = isAdminRoute(routeState.path);
+
+  if (currentIsAdminRoute && adminGate === 'authorized') {
+    return (
+      <div className="min-h-screen bg-white text-slate-800">
+        <a
+          href="#main-content"
+          onClick={(e) => {
+            const mainEl = document.getElementById('main-content');
+            if (mainEl) {
+              e.preventDefault();
+              mainEl.focus();
+              mainEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }}
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:start-3 focus:z-50 focus:rounded-full focus:bg-brand-700 focus:px-4 focus:py-2 focus:font-ui focus:text-small focus:font-semibold focus:text-white focus:shadow-md"
+        >
+          تخطي إلى المحتوى الرئيسي
+        </a>
+
+        <AdminLayout
+          activePath={toAdminSectionPath(routeState.path)}
+          onNavigateSection={handleNavigateAdminSection}
+          onNavigateSiteHome={handleNavigateHome}
+          onSignOutSuccess={handleNavigateHome}
+        >
+          {routeState.path === '/admin' ? (
+            <AdminDashboardPage onNavigateSection={handleNavigateAdminSection} />
+          ) : routeState.path === '/admin/events' ? (
+            <AdminEventsPage
+              onCreateEvent={handleNavigateAdminCreateEvent}
+              onEditEvent={handleNavigateAdminEditEvent}
+              initialSuccessMessage={adminEventsBanner}
+              onConsumeSuccessMessage={handleConsumeAdminEventsBanner}
+              onEventsMutated={handleRetryEvents}
+            />
+          ) : routeState.path === '/admin/events/new' ? (
+            <AdminEventFormPage
+              mode="create"
+              onCancelToList={() => handleNavigateAdminSection('/admin/events')}
+              onSuccessToList={handleAdminEventFormSuccess}
+            />
+          ) : routeState.path === '/admin/events/edit' ? (
+            <AdminEventFormPage
+              mode="edit"
+              eventId={routeState.eventId}
+              onCancelToList={() => handleNavigateAdminSection('/admin/events')}
+              onSuccessToList={handleAdminEventFormSuccess}
+            />
+          ) : routeState.path === '/admin/registrations' ? (
+            <AdminRegistrationsPage />
+          ) : (
+            <AdminUsersPage />
+          )}
+        </AdminLayout>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-white text-slate-800">
       <a
@@ -484,7 +809,7 @@ function AppContent() {
       </a>
 
       <Header
-        currentPath={routeState.path}
+        currentPath={isAdminRoute(routeState.path) ? '/' : routeState.path}
         onNavigateHome={handleNavigateHome}
         onNavigateEvents={handleNavigateEvents}
         onNavigateMyRegistrations={handleNavigateMyRegistrations}
@@ -492,6 +817,26 @@ function AppContent() {
       />
 
       <div className="flex-1">
+        {currentIsAdminRoute && (adminGate === 'idle' || adminGate === 'checking') && (
+          <main id="main-content" tabIndex={-1} className="py-12 md:py-16 focus:outline-none">
+            <div
+              role="status"
+              aria-label="جارٍ التحقق من صلاحية الوصول"
+              className="afaq-container space-y-6"
+            >
+              <div className="h-9 w-48 animate-pulse rounded-sm bg-slate-100" aria-hidden="true" />
+              <div className="h-44 w-full animate-pulse rounded-lg bg-slate-100" aria-hidden="true" />
+            </div>
+          </main>
+        )}
+
+        {currentIsAdminRoute && adminGate === 'unauthorized' && (
+          <UnauthorizedPage
+            onNavigateHome={handleNavigateHome}
+            onNavigateLogin={handleRequireLoginForAdmin}
+          />
+        )}
+
         {routeState.path === '/login' && (
           <LoginPage
             onBack={handleLoginReturn}
