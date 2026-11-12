@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq } from 'drizzle-orm';
 import { db } from './index.ts';
 import { events, registrations } from './schema.ts';
 import { deleteEventMediaByUrl } from './media.ts';
@@ -59,7 +59,7 @@ export async function getPublishedEvents(): Promise<AfaqEvent[]> {
       .select()
       .from(events)
       .where(eq(events.status, 'published'))
-      .orderBy(asc(events.startsAt));
+      .orderBy(desc(events.createdAt), desc(events.startsAt));
 
     return rows.map(mapEventRow);
   } catch (error) {
