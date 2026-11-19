@@ -16,7 +16,19 @@ import { AdminEventsPage } from './pages/admin/AdminEventsPage';
 import { AdminEventFormPage } from './pages/admin/AdminEventFormPage';
 import { AdminRegistrationsPage } from './pages/admin/AdminRegistrationsPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
+import { AfaqChatWidget } from './components/chat/AfaqChatWidget';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import {
+  buildEventJsonLd,
+  buildEventsCollectionJsonLd,
+  buildHomeJsonLd,
+  buildShortDescription,
+  CATEGORY_SEO_META,
+  DEFAULT_OG_IMAGE_ALT,
+  DEFAULT_SITE_DESCRIPTION,
+  DEFAULT_SITE_TITLE,
+  resolveAbsoluteUrl,
+} from './lib/seo';
 import type { AfaqEvent, EventCategory } from './types/event';
 
 const VALID_CATEGORIES: EventCategory[] = ['workshop', 'course', 'event'];
@@ -205,11 +217,67 @@ function setMetaContent(selector: string, content: string) {
   }
 }
 
-function updatePageMetadata(title: string, description: string) {
+function setCanonicalHref(href: string) {
+  let link = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+  if (!link) {
+    link = document.createElement('link');
+    link.setAttribute('rel', 'canonical');
+    document.head.appendChild(link);
+  }
+  link.setAttribute('href', href);
+}
+
+function setJsonLdData(data: Record<string, unknown>) {
+  const scriptEl = document.getElementById('afaq-jsonld');
+  if (scriptEl) {
+    scriptEl.textContent = JSON.stringify(data);
+  }
+}
+
+interface PageMetadataInput {
+  title: string;
+  description: string;
+  robots?: string;
+  canonicalUrl?: string;
+  ogType?: 'website' | 'article';
+  ogImageUrl?: string;
+  ogImageAlt?: string;
+  jsonLd?: Record<string, unknown>;
+}
+
+function updatePageMetadata({
+  title,
+  description,
+  robots = 'index, follow',
+  canonicalUrl,
+  ogType = 'website',
+  ogImageUrl,
+  ogImageAlt,
+  jsonLd,
+}: PageMetadataInput) {
+  const origin = window.location.origin;
+  const resolvedCanonical =
+    canonicalUrl ?? `${origin}${window.location.pathname}`;
+  const resolvedImage = ogImageUrl ?? resolveAbsoluteUrl(origin, null);
+  const resolvedImageAlt = ogImageAlt ?? DEFAULT_OG_IMAGE_ALT;
+
   document.title = title;
   setMetaContent('meta[name="description"]', description);
+  setMetaContent('meta[name="robots"]', robots);
+  setCanonicalHref(resolvedCanonical);
+  setMetaContent('meta[property="og:type"]', ogType);
+  setMetaContent('meta[property="og:url"]', resolvedCanonical);
   setMetaContent('meta[property="og:title"]', title);
   setMetaContent('meta[property="og:description"]', description);
+  setMetaContent('meta[property="og:image"]', resolvedImage);
+  setMetaContent('meta[property="og:image:alt"]', resolvedImageAlt);
+  setMetaContent('meta[name="twitter:title"]', title);
+  setMetaContent('meta[name="twitter:description"]', description);
+  setMetaContent('meta[name="twitter:image"]', resolvedImage);
+
+  if (jsonLd) {
+    setJsonLdData(jsonLd);
+  }
 }
 
 function AppContent() {
@@ -344,81 +412,143 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
+    const origin = window.location.origin;
+    const baseJsonLd = buildHomeJsonLd(origin, events);
+
     if (isAdminRoute(routeState.path)) {
       if (adminGate === 'unauthorized') {
-        updatePageMetadata(
-          'غير مصرّح | آفاق',
-          'عذرًا، هذه الصفحة مخصصة لمشرفي منصة آفاق فقط.'
-        );
+        updatePageMetadata({
+          title: 'غير مصرّح | آفاق',
+          description: 'عذرًا، هذه الصفحة مخصصة لمشرفي منصة آفاق فقط.',
+          robots: 'noindex, nofollow',
+          jsonLd: baseJsonLd,
+        });
       } else if (routeState.path === '/admin/events/new') {
-        updatePageMetadata(
-          'إضافة فعالية جديدة | لوحة التحكم — آفاق',
-          'إضافة فعالية أو ورشة أو دورة جديدة في منصة آفاق.'
-        );
+        updatePageMetadata({
+          title: 'إضافة فعالية جديدة | لوحة التحكم — آفاق',
+          description: 'إضافة فعالية أو ورشة أو دورة جديدة في منصة آفاق.',
+          robots: 'noindex, nofollow',
+          jsonLd: baseJsonLd,
+        });
       } else if (routeState.path === '/admin/events/edit') {
-        updatePageMetadata(
-          'تعديل الفعالية | لوحة التحكم — آفاق',
-          'تعديل بيانات الفعالية وتحديث حالة نشرها في منصة آفاق.'
-        );
+        updatePageMetadata({
+          title: 'تعديل الفعالية | لوحة التحكم — آفاق',
+          description: 'تعديل بيانات الفعالية وتحديث حالة نشرها في منصة آفاق.',
+          robots: 'noindex, nofollow',
+          jsonLd: baseJsonLd,
+        });
       } else if (routeState.path === '/admin/events') {
-        updatePageMetadata(
-          'إدارة الفعاليات | لوحة التحكم — آفاق',
-          'إدارة الفعاليات والورش والدورات التدريبية في منصة آفاق.'
-        );
+        updatePageMetadata({
+          title: 'إدارة الفعاليات | لوحة التحكم — آفاق',
+          description: 'إدارة الفعاليات والورش والدورات التدريبية في منصة آفاق.',
+          robots: 'noindex, nofollow',
+          jsonLd: baseJsonLd,
+        });
       } else if (routeState.path === '/admin/registrations') {
-        updatePageMetadata(
-          'إدارة التسجيلات | لوحة التحكم — آفاق',
-          'عرض ومتابعة تسجيلات الشباب في فعاليات آفاق.'
-        );
+        updatePageMetadata({
+          title: 'إدارة التسجيلات | لوحة التحكم — آفاق',
+          description: 'عرض ومتابعة تسجيلات الشباب في فعاليات آفاق.',
+          robots: 'noindex, nofollow',
+          jsonLd: baseJsonLd,
+        });
       } else if (routeState.path === '/admin/users') {
-        updatePageMetadata(
-          'المستخدمون | لوحة التحكم — آفاق',
-          'عرض قائمة الحسابات المسجّلة عبر جوجل في منصة آفاق.'
-        );
+        updatePageMetadata({
+          title: 'المستخدمون | لوحة التحكم — آفاق',
+          description: 'عرض قائمة الحسابات المسجّلة عبر جوجل في منصة آفاق.',
+          robots: 'noindex, nofollow',
+          jsonLd: baseJsonLd,
+        });
       } else {
-        updatePageMetadata(
-          'لوحة التحكم | آفاق',
-          'لوحة إدارة منصة آفاق للفعاليات والورش والدورات في الفيوم.'
-        );
+        updatePageMetadata({
+          title: 'لوحة التحكم | آفاق',
+          description: 'لوحة إدارة منصة آفاق للفعاليات والورش والدورات في الفيوم.',
+          robots: 'noindex, nofollow',
+          jsonLd: baseJsonLd,
+        });
       }
     } else if (routeState.path === '/login') {
-      updatePageMetadata(
-        'تسجيل الدخول | آفاق',
-        'سجّل دخولك بحساب جوجل في منصة آفاق لاكتشاف فعاليات وورش ودورات الفيوم والتسجيل فيها بسهولة.'
-      );
+      updatePageMetadata({
+        title: 'تسجيل الدخول | آفاق',
+        description:
+          'سجّل دخولك بحساب جوجل في منصة آفاق لاكتشاف فعاليات وورش ودورات الفيوم والتسجيل فيها بسهولة.',
+        robots: 'noindex, nofollow',
+        jsonLd: baseJsonLd,
+      });
     } else if (routeState.path === '/my-registrations') {
-      updatePageMetadata(
-        'تسجيلاتي | آفاق',
-        'تابع قائمة الفعاليات والورش التدريبية والدورات التي سجّلت بها على منصة آفاق في الفيوم.'
-      );
+      updatePageMetadata({
+        title: 'تسجيلاتي | آفاق',
+        description:
+          'تابع قائمة الفعاليات والورش التدريبية والدورات التي سجّلت بها على منصة آفاق في الفيوم.',
+        robots: 'noindex, nofollow',
+        jsonLd: baseJsonLd,
+      });
     } else if (routeState.path === '/events') {
-      updatePageMetadata(
-        'كل الفعاليات | آفاق — فعاليات وورش ودورات الفيوم',
-        'تصفح وابحث في جميع الورش والدورات التدريبية والفعاليات الشبابية المنشورة في محافظة الفيوم.'
-      );
+      const category = routeState.filters.category;
+      const pageTitle = category
+        ? CATEGORY_SEO_META[category].title
+        : 'كل الفعاليات | آفاق — فعاليات وورش ودورات الفيوم';
+      const pageDescription = category
+        ? CATEGORY_SEO_META[category].description
+        : 'تصفح وابحث في جميع الورش والدورات التدريبية والفعاليات الشبابية المنشورة في محافظة الفيوم.';
+      const canonicalUrl = category
+        ? `${origin}/events?category=${category}`
+        : `${origin}/events`;
+      updatePageMetadata({
+        title: pageTitle,
+        description: pageDescription,
+        robots: 'index, follow',
+        canonicalUrl,
+        ogImageAlt: pageTitle,
+        jsonLd: buildEventsCollectionJsonLd(
+          origin,
+          pageTitle,
+          pageDescription,
+          canonicalUrl,
+          events
+        ),
+      });
     } else if (routeState.path === '/event-details') {
       if (detailsEvent) {
-        const cleanDesc = detailsEvent.description.replace(/\s+/g, ' ').trim();
-        const shortDesc =
-          cleanDesc.length > 155 ? `${cleanDesc.slice(0, 152)}...` : cleanDesc;
-        updatePageMetadata(
-          `${detailsEvent.title} | آفاق`,
-          shortDesc ||
-            `${detailsEvent.title} — ${detailsEvent.categoryLabel} في ${detailsEvent.location} بتنظيم ${detailsEvent.organizer}.`
+        const fallbackDesc = `${detailsEvent.title} — ${detailsEvent.categoryLabel} في ${detailsEvent.location} بتنظيم ${detailsEvent.organizer}.`;
+        const shortDesc = buildShortDescription(
+          detailsEvent.description,
+          fallbackDesc
         );
+        updatePageMetadata({
+          title: `${detailsEvent.title} | آفاق`,
+          description: shortDesc,
+          robots: 'index, follow',
+          canonicalUrl: `${origin}/events/${encodeURIComponent(detailsEvent.id)}`,
+          ogType: 'article',
+          ogImageUrl: resolveAbsoluteUrl(origin, detailsEvent.coverImageUrl),
+          ogImageAlt: detailsEvent.title,
+          jsonLd: buildEventJsonLd(origin, detailsEvent),
+        });
       } else {
-        updatePageMetadata(
-          'تفاصيل الفعالية | آفاق',
-          'تعرّف على تفاصيل وموعد ومكان الفعالية وسجّل مكانك بسهولة عبر منصة آفاق.'
-        );
+        updatePageMetadata({
+          title: 'تفاصيل الفعالية | آفاق',
+          description:
+            'تعرّف على تفاصيل وموعد ومكان الفعالية وسجّل مكانك بسهولة عبر منصة آفاق.',
+          robots: 'index, follow',
+          jsonLd: baseJsonLd,
+        });
       }
     } else {
-      updatePageMetadata(
-        'آفاق | اكتشف آفاقك الجديدة — فعاليات وورش ودورات الفيوم',
-        'منصة آفاق تساعد الشباب في الفيوم على اكتشاف الفعاليات والورش والدورات والتسجيل فيها من مكان واحد.'
-      );
+      updatePageMetadata({
+        title: DEFAULT_SITE_TITLE,
+        description: DEFAULT_SITE_DESCRIPTION,
+        robots: 'index, follow',
+        canonicalUrl: `${origin}/`,
+        jsonLd: baseJsonLd,
+      });
     }
-  }, [routeState.path, detailsEvent, adminGate]);
+  }, [
+    routeState.path,
+    routeState.filters.category,
+    detailsEvent,
+    adminGate,
+    events,
+  ]);
 
   const navigateTo = useCallback(
     (nextState: RouteState, replace = false) => {
@@ -901,6 +1031,10 @@ function AppContent() {
         onNavigateEvents={handleNavigateEvents}
         onExploreCategory={handleExploreCategory}
       />
+
+      {!currentIsAdminRoute && (
+        <AfaqChatWidget onOpenEventById={handleOpenEventById} />
+      )}
     </div>
   );
 }

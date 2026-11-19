@@ -49,7 +49,7 @@ export const EventCard: React.FC<EventCardProps> = ({
         )}
 
         {/* Category Badge over Image */}
-        <span className="absolute top-3 end-3 inline-flex items-center rounded-full bg-accent-500 px-3 py-1 font-ui text-caption font-semibold text-brand-900 shadow-xs whitespace-nowrap">
+        <span className="absolute top-3 start-3 inline-flex items-center rounded-full bg-accent-500 px-3 py-1 font-ui text-caption font-semibold text-brand-900 shadow-xs whitespace-nowrap">
           {event.categoryLabel}
         </span>
       </div>

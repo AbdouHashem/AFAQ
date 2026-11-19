@@ -1,5 +1,6 @@
 import * as dotenv from 'dotenv';
 import express from 'express';
+import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -34,6 +35,17 @@ import {
   requireAuth,
   type AuthRequest,
 } from './src/middleware/auth.ts';
+import {
+  generateRobotsTxt,
+  generateSitemapXml,
+  injectSeoIntoHtml,
+  resolveBaseUrl,
+  resolveRouteSeoForRequest,
+} from './src/lib/server-seo.ts';
+import {
+  GeminiChatError,
+  sendAfaqChatMessage,
+} from './src/lib/gemini-chat.ts';
 
 dotenv.config();
 
@@ -44,7 +56,36 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  app.set('trust proxy', 1);
   app.use(express.json({ limit: '1mb' }));
+
+  app.get('/robots.txt', (req, res) => {
+    const baseUrl = resolveBaseUrl(req);
+    res
+      .type('text/plain; charset=utf-8')
+      .setHeader('Cache-Control', 'public, max-age=3600')
+      .send(generateRobotsTxt(baseUrl));
+  });
+
+  app.get('/sitemap.xml', async (req, res) => {
+    try {
+      const baseUrl = resolveBaseUrl(req);
+      const xml = await generateSitemapXml(baseUrl);
+      res
+        .type('application/xml; charset=utf-8')
+        .setHeader('Cache-Control', 'public, max-age=300')
+        .send(xml);
+    } catch (error) {
+      console.error('Failed to generate sitemap.xml:', error);
+      res.status(500).type('text/plain; charset=utf-8').send('Failed to generate sitemap');
+    }
+  });
+
+  app.get('/googleb4b6cfa611017b74.html', (_req, res) => {
+    res
+      .type('text/html; charset=utf-8')
+      .send('google-site-verification: googleb4b6cfa611017b74.html');
+  });
 
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' });
@@ -124,6 +165,26 @@ async function startServer() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'تعذر تحميل تفاصيل الفعالية.';
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // Public: multi-turn Gemini chatbot grounded in live published events
+  app.post('/api/chat', async (req, res) => {
+    try {
+      const result = await sendAfaqChatMessage({
+        message: req.body?.message,
+        history: req.body?.history,
+      });
+      res.json(result);
+    } catch (error) {
+      if (error instanceof GeminiChatError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'تعذر التواصل مع المساعد الذكي حاليًا.';
       res.status(500).json({ error: message });
     }
   });
@@ -395,21 +456,81 @@ async function startServer() {
     res.status(404).json({ error: 'المسار المطلوب غير موجود.' });
   });
 
+  const isHtmlNavigationRequest = (req: express.Request): boolean => {
+    if (req.method !== 'GET') return false;
+    const p = req.path;
+    if (
+      p.startsWith('/api') ||
+      p.startsWith('/@') ||
+      p.startsWith('/src/') ||
+      p.startsWith('/node_modules/') ||
+      p.startsWith('/assets/') ||
+      p.startsWith('/images/')
+    ) {
+      return false;
+    }
+    if (path.extname(p)) return false;
+    const accept = req.headers.accept ?? '';
+    return accept.includes('text/html') || accept === '*/*' || accept === '';
+  };
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
+
+    app.get('*', async (req, res, next) => {
+      if (!isHtmlNavigationRequest(req)) {
+        return next();
+      }
+      try {
+        const indexPath = path.resolve(__dirname, 'index.html');
+        const rawTemplate = await fs.readFile(indexPath, 'utf-8');
+        const transformed = await vite.transformIndexHtml(
+          req.originalUrl,
+          rawTemplate
+        );
+        const baseUrl = resolveBaseUrl(req);
+        const seo = await resolveRouteSeoForRequest(req, baseUrl);
+        const html = injectSeoIntoHtml(transformed, seo);
+        res
+          .status(seo.statusCode)
+          .setHeader('Content-Type', 'text/html; charset=utf-8')
+          .send(html);
+      } catch (err) {
+        vite.ssrFixStacktrace(err as Error);
+        next(err);
+      }
+    });
+
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(__dirname, 'dist');
-    app.use(express.static(distDir));
-    app.get('*', (req, res, next) => {
+    const distIndexPath = path.join(distDir, 'index.html');
+    let cachedDistHtml: string | null = null;
+
+    app.use(express.static(distDir, { index: false }));
+    app.get('*', async (req, res, next) => {
       if (req.path.startsWith('/api')) {
         return next();
       }
-      res.sendFile(path.join(distDir, 'index.html'));
+      try {
+        if (!cachedDistHtml) {
+          cachedDistHtml = await fs.readFile(distIndexPath, 'utf-8');
+        }
+        const baseUrl = resolveBaseUrl(req);
+        const seo = await resolveRouteSeoForRequest(req, baseUrl);
+        const html = injectSeoIntoHtml(cachedDistHtml, seo);
+        res
+          .status(seo.statusCode)
+          .setHeader('Content-Type', 'text/html; charset=utf-8')
+          .send(html);
+      } catch (err) {
+        console.error('Failed to serve SSR SEO HTML:', err);
+        res.sendFile(distIndexPath);
+      }
     });
   }
 
