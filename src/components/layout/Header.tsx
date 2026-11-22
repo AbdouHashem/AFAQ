@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LogOut, Menu, X } from 'lucide-react';
+import { LayoutDashboard, LogOut, Menu, X } from 'lucide-react';
 import { AfaqLogo } from '../brand/AfaqLogo';
 import { Button } from '../ui/Button';
 import { useAuth } from '../../context/AuthContext';
@@ -9,6 +9,7 @@ export interface HeaderProps {
   onNavigateHome: () => void;
   onNavigateEvents: () => void;
   onNavigateMyRegistrations: () => void;
+  onNavigateAdmin: () => void;
   onLoginClick: () => void;
 }
 
@@ -17,6 +18,7 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigateHome,
   onNavigateEvents,
   onNavigateMyRegistrations,
+  onNavigateAdmin,
   onLoginClick,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -59,6 +61,12 @@ export const Header: React.FC<HeaderProps> = ({
   const handleSignOut = async () => {
     setMobileMenuOpen(false);
     await signOut();
+  };
+
+  const handleAdminClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    setMobileMenuOpen(false);
+    onNavigateAdmin();
   };
 
   return (
@@ -138,6 +146,23 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="max-w-44 truncate font-ui text-small font-semibold text-brand-900">
                   {user.name}
                 </span>
+                {user.isAdmin && (
+                  <Button
+                    href="/admin"
+                    variant="secondary"
+                    size="sm"
+                    icon={
+                      <LayoutDashboard
+                        className="h-4 w-4"
+                        strokeWidth={2}
+                        aria-hidden="true"
+                      />
+                    }
+                    onClick={handleAdminClick}
+                  >
+                    لوحة التحكم
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -230,6 +255,24 @@ export const Header: React.FC<HeaderProps> = ({
                   <p className="px-3 font-ui text-small font-semibold text-brand-900 truncate">
                     {user.name}
                   </p>
+                  {user.isAdmin && (
+                    <Button
+                      href="/admin"
+                      variant="secondary"
+                      size="md"
+                      className="w-full"
+                      icon={
+                        <LayoutDashboard
+                          className="h-4 w-4"
+                          strokeWidth={2}
+                          aria-hidden="true"
+                        />
+                      }
+                      onClick={handleAdminClick}
+                    >
+                      لوحة التحكم
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="md"

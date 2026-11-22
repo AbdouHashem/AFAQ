@@ -30,6 +30,7 @@ import {
   uploadEventCoverMedia,
 } from './src/db/media.ts';
 import { getAllUsersForAdmin } from './src/db/users.ts';
+import { isUserAdmin } from './src/db/roles.ts';
 import {
   requireAdmin,
   requireAuth,
@@ -115,15 +116,23 @@ async function startServer() {
     if (!uid) {
       return res.status(401).json({ error: 'غير مصرح.' });
     }
-    const email = req.user?.email ?? `${uid}@users.afaq.local`;
-    const name = req.user?.name ?? email.split('@')[0] ?? 'مستخدم آفاق';
-    res.json({
-      user: {
-        id: uid,
-        name,
-        email,
-      },
-    });
+    try {
+      const email = req.user?.email ?? `${uid}@users.afaq.local`;
+      const name = req.user?.name ?? email.split('@')[0] ?? 'مستخدم آفاق';
+      const isAdmin = await isUserAdmin(uid);
+      res.json({
+        user: {
+          id: uid,
+          name,
+          email,
+          isAdmin,
+        },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'تعذر التحقق من بيانات الجلسة.';
+      res.status(500).json({ error: message });
+    }
   });
 
   app.get('/api/auth/me', requireAuth, async (req: AuthRequest, res) => {
@@ -131,15 +140,23 @@ async function startServer() {
     if (!uid) {
       return res.status(401).json({ error: 'غير مصرح.' });
     }
-    const email = req.user?.email ?? `${uid}@users.afaq.local`;
-    const name = req.user?.name ?? email.split('@')[0] ?? 'مستخدم آفاق';
-    res.json({
-      user: {
-        id: uid,
-        name,
-        email,
-      },
-    });
+    try {
+      const email = req.user?.email ?? `${uid}@users.afaq.local`;
+      const name = req.user?.name ?? email.split('@')[0] ?? 'مستخدم آفاق';
+      const isAdmin = await isUserAdmin(uid);
+      res.json({
+        user: {
+          id: uid,
+          name,
+          email,
+          isAdmin,
+        },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'تعذر التحقق من بيانات الجلسة.';
+      res.status(500).json({ error: message });
+    }
   });
 
   // Public: only published events are visible

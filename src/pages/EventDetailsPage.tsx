@@ -14,6 +14,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { parseJsonResponse, tryParseJson } from '../lib/safe-json';
 import type { AfaqEvent } from '../types/event';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
@@ -83,7 +84,10 @@ export const EventDetailsPage: React.FC<EventDetailsPageProps> = ({
           throw new Error('تعذر تحميل تفاصيل الفعالية حاليًا.');
         }
 
-        const data = (await res.json()) as { event?: AfaqEvent };
+        const data = await parseJsonResponse<{ event?: AfaqEvent }>(
+          res,
+          'تعذر تحميل تفاصيل الفعالية حاليًا.'
+        );
         if (!data.event) {
           setEvent(null);
           setNotFound(true);
@@ -138,11 +142,13 @@ export const EventDetailsPage: React.FC<EventDetailsPageProps> = ({
 
         if (!active) return;
         if (res.ok) {
-          const data = (await res.json()) as { registered?: boolean };
-          setIsRegistered(Boolean(data.registered));
+          const data = await tryParseJson<{ registered?: boolean }>(res);
+          if (data) {
+            setIsRegistered(Boolean(data.registered));
+          }
         }
-      } catch (err) {
-        console.error('Failed to check registration status:', err);
+      } catch {
+        // Non-fatal background check failure
       } finally {
         if (active) {
           setCheckingRegistration(false);

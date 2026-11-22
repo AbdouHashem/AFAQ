@@ -11,6 +11,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { parseJsonResponse } from '../lib/safe-json';
 import type { UserRegistrationItem } from '../types/event';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
@@ -106,9 +107,9 @@ export const MyRegistrationsPage: React.FC<MyRegistrationsPageProps> = ({
           throw new Error('تعذر تحميل تسجيلاتك حاليًا. يرجى المحاولة مرة أخرى.');
         }
 
-        const data = (await res.json()) as {
+        const data = await parseJsonResponse<{
           registrations?: UserRegistrationItem[];
-        };
+        }>(res, 'تعذر تحميل تسجيلاتك حاليًا. يرجى المحاولة مرة أخرى.');
         setRegistrations(
           Array.isArray(data.registrations) ? data.registrations : []
         );

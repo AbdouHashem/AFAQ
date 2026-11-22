@@ -6,11 +6,13 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth, googleAuthProvider } from '../lib/firebase';
+import { tryParseJson } from '../lib/safe-json';
 
 export interface AuthUser {
   id: string;
   name: string;
   email: string;
+  isAdmin?: boolean;
 }
 
 interface AuthContextValue {
@@ -55,34 +57,84 @@ function mapFirebaseAuthError(error: unknown): string {
   }
 }
 
-async function syncUserWithBackend(firebaseUser: User): Promise<{ user: AuthUser; token: string }> {
-  const token = await firebaseUser.getIdToken();
-  const res = await fetch('/api/auth/session', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error('تعذر مزامنة بيانات حسابك مع الخادم. يرجى المحاولة مرة أخرى.');
-  }
-
-  const data = (await res.json()) as { user?: AuthUser };
+function buildFallbackUser(firebaseUser: User): AuthUser {
   const fallbackName =
     firebaseUser.displayName ??
     firebaseUser.email?.split('@')[0] ??
     'مستخدم آفاق';
 
   return {
-    token,
-    user: data.user ?? {
-      id: firebaseUser.uid,
-      name: fallbackName,
-      email: firebaseUser.email ?? '',
-    },
+    id: firebaseUser.uid,
+    name: fallbackName,
+    email: firebaseUser.email ?? '',
+    isAdmin: false,
   };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function syncUserWithBackend(
+  firebaseUser: User,
+  maxAttempts = 3
+): Promise<{ user: AuthUser; token: string }> {
+  const token = await firebaseUser.getIdToken();
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await tryParseJson<{ user?: AuthUser; error?: string }>(res);
+
+      if (!res.ok || !data) {
+        const retryable = !data || res.status >= 500;
+        lastError = new Error(
+          data?.error ||
+            'تعذر مزامنة بيانات حسابك مع الخادم. يرجى المحاولة مرة أخرى.'
+        );
+        if (retryable && attempt < maxAttempts) {
+          await sleep(500 * attempt);
+          continue;
+        }
+        throw lastError;
+      }
+
+      const syncedUser = data.user
+        ? {
+            ...data.user,
+            isAdmin: Boolean(data.user.isAdmin),
+          }
+        : buildFallbackUser(firebaseUser);
+
+      return {
+        token,
+        user: syncedUser,
+      };
+    } catch (err) {
+      lastError =
+        err instanceof Error
+          ? err
+          : new Error('تعذر مزامنة بيانات حسابك مع الخادم.');
+      if (attempt < maxAttempts) {
+        await sleep(500 * attempt);
+        continue;
+      }
+      throw lastError;
+    }
+  }
+
+  throw (
+    lastError ??
+    new Error('تعذر مزامنة بيانات حسابك مع الخادم. يرجى المحاولة مرة أخرى.')
+  );
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -110,17 +162,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!active) return;
         inMemoryTokenRef.current = synced.token;
         setUser(synced.user);
-      } catch (err) {
+      } catch {
         if (!active) return;
-        console.error('Session sync failed:', err);
-        setUser({
-          id: firebaseUser.uid,
-          name:
-            firebaseUser.displayName ??
-            firebaseUser.email?.split('@')[0] ??
-            'مستخدم آفاق',
-          email: firebaseUser.email ?? '',
-        });
+        setUser(buildFallbackUser(firebaseUser));
       } finally {
         if (active) {
           setAuthLoading(false);

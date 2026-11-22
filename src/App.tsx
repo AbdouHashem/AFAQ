@@ -29,6 +29,7 @@ import {
   DEFAULT_SITE_TITLE,
   resolveAbsoluteUrl,
 } from './lib/seo';
+import { parseJsonResponse, tryParseJson } from './lib/safe-json';
 import type { AfaqEvent, EventCategory } from './types/event';
 
 const VALID_CATEGORIES: EventCategory[] = ['workshop', 'course', 'event'];
@@ -324,7 +325,10 @@ function AppContent() {
         if (!res.ok) {
           throw new Error('تعذر تحميل الفعاليات حاليًا. يرجى المحاولة مرة أخرى.');
         }
-        const data = (await res.json()) as { events?: AfaqEvent[] };
+        const data = await parseJsonResponse<{ events?: AfaqEvent[] }>(
+          res,
+          'تعذر تحميل الفعاليات حاليًا. يرجى المحاولة مرة أخرى.'
+        );
         setEvents(Array.isArray(data.events) ? data.events : []);
       } catch (err) {
         if ((err as { name?: string }).name === 'AbortError') return;
@@ -385,9 +389,7 @@ function AppContent() {
           return;
         }
 
-        const data = (await res.json().catch(() => ({}))) as {
-          authorized?: boolean;
-        };
+        const data = (await tryParseJson<{ authorized?: boolean }>(res)) ?? {};
         setAdminGate(data.authorized === true ? 'authorized' : 'unauthorized');
       } catch (err) {
         if ((err as { name?: string }).name === 'AbortError') return;
@@ -943,6 +945,7 @@ function AppContent() {
         onNavigateHome={handleNavigateHome}
         onNavigateEvents={handleNavigateEvents}
         onNavigateMyRegistrations={handleNavigateMyRegistrations}
+        onNavigateAdmin={() => handleNavigateAdminSection('/admin')}
         onLoginClick={() => handleNavigateLogin()}
       />
 
